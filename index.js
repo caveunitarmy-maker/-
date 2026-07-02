@@ -990,26 +990,26 @@ const http = require("http");
 
 const PORT = process.env.PORT || 3000;
 
-// 1분마다 헬스 체크 요청을 보내는 함수
-function sendHealthCheck() {
-  const healthCheckUrl = `http://localhost:${PORT}/health`;
+// 5분(300초)마다 https://soyeongi.onrender.com을 호출하는 함수
+function keepAliveRequest() {
+  const keepAliveUrl = "https://soyeongi.onrender.com";
   
-  fetch(healthCheckUrl)
+  fetch(keepAliveUrl)
     .then((response) => {
       const timestamp = new Date().toISOString();
-      console.log(`[${timestamp}] 헬스 체크 완료: ${response.status}`);
+      console.log(`[${timestamp}] Keep-alive 요청 완료: ${response.status}`);
     })
     .catch((error) => {
       const timestamp = new Date().toISOString();
-      console.error(`[${timestamp}] 헬스 체크 실패:`, error.message);
+      console.error(`[${timestamp}] Keep-alive 요청 실패:`, error.message);
     });
 }
 
-// 60초(60000ms)마다 헬스 체크 전송
-setInterval(sendHealthCheck, 60000);
+// 5분(300000ms)마다 keep-alive 요청 전송
+setInterval(keepAliveRequest, 300000);
 
-// 서버 시작 후 5초 뒤에 첫 헬스 체크 실행
-setTimeout(sendHealthCheck, 5000);
+// 서버 시작 후 10초 뒤에 첫 번째 keep-alive 요청 실행
+setTimeout(keepAliveRequest, 10000);
 
 http.createServer((req, res) => {
   res.writeHead(200);
