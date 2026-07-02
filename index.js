@@ -990,6 +990,27 @@ const http = require("http");
 
 const PORT = process.env.PORT || 3000;
 
+// 1분마다 헬스 체크 요청을 보내는 함수
+function sendHealthCheck() {
+  const healthCheckUrl = `http://localhost:${PORT}/health`;
+  
+  fetch(healthCheckUrl)
+    .then((response) => {
+      const timestamp = new Date().toISOString();
+      console.log(`[${timestamp}] 헬스 체크 완료: ${response.status}`);
+    })
+    .catch((error) => {
+      const timestamp = new Date().toISOString();
+      console.error(`[${timestamp}] 헬스 체크 실패:`, error.message);
+    });
+}
+
+// 60초(60000ms)마다 헬스 체크 전송
+setInterval(sendHealthCheck, 60000);
+
+// 서버 시작 후 5초 뒤에 첫 헬스 체크 실행
+setTimeout(sendHealthCheck, 5000);
+
 http.createServer((req, res) => {
   res.writeHead(200);
   res.end("Bot is running");
