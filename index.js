@@ -985,3 +985,14 @@ if (!config.token || config.token.includes("여기에") || config.token.startsWi
 }
 
 client.login(config.token);
+
+const http = require("http");
+
+const PORT = process.env.PORT || 3000;
+
+http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end("Bot is running");
+}).listen(PORT, () => {
+  console.log(`Listening on port ${PORT}`);
+});
