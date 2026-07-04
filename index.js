@@ -6,6 +6,7 @@ const {
   EmbedBuilder,
   Events,
   GatewayIntentBits,
+  MessageFlags,
   ModalBuilder,
   SlashCommandBuilder,
   TextInputBuilder,
