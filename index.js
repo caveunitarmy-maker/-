@@ -462,9 +462,21 @@ function createRobloxProfileEmbed(username, profile) {
 
     embed.addFields(
       { name: "프로필 링크", value: profile.profileUrl, inline: false },
-      { name: "표시 이름", value: profile.displayName || profile.username, inline: true },
-      { name: "계정 생성일", value: created ? formatDate(created) : "알 수 없음", inline: true },
-      { name: "계정 나이", value: accountAge, inline: true },
+      { 
+        name: "표시 이름", 
+        value: profile.displayName || profile.username, 
+        inline: true 
+      },
+      { 
+        name: "계정 생성일", 
+        value: created ? formatDate(created) : "알 수 없음", 
+        inline: true 
+      },
+      { 
+        name: "계정 나이", 
+        value: accountAge, 
+        inline: true 
+      },
       { name: "Caveful Games", value: getGroupRoleText(profile, 8485983), inline: false },
       { name: "Cave Army Rank Group [CAVE]", value: getGroupRoleText(profile, 562593164), inline: false },
       { name: "CA | Training&Doctrine Command", value: getGroupRoleText(profile, 724594083), inline: false },
