@@ -923,17 +923,6 @@ async function handleAdminInteraction(interaction) {
 
 client.once(Events.ClientReady, async (readyClient) => {
   console.log(`${readyClient.user.tag} 준비 완료`);
-
-try {
-    const guild = await readyClient.guilds.fetch("1279685629751459902");
-    const member = await guild.members.fetchMe();
-  
-    await member.setNickname("소영이");
-    console.log("서버 별명을 '소영이'로 변경했습니다.");
-  } catch (error) {
-    console.error("별명 변경 실패:", error);
-  }
-  
   await registerCommands(readyClient);
 
   if (config.allowedGuildId) {
