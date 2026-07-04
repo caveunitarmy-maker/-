@@ -446,6 +446,7 @@ async function fetchRobloxUserProfile(username) {
 function createRobloxProfileEmbed(username, profile) {
   const embed = new EmbedBuilder()
     .setTitle("계정확인 매니저")
+    .setDescription("**[계급] (ADS) 감지된닉네임**\n별명을 바꿔달라고 안내해주세요.")
     .setColor(profile?.exists ? 0x2ecc71 : 0xeb5757)
     .addFields(
       { name: "닉네임", value: username || "감지된 닉네임 없음", inline: true },
