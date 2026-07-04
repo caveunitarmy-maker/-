@@ -6,8 +6,10 @@ const {
   EmbedBuilder,
   Events,
   GatewayIntentBits,
-  MessageFlags,
+  ModalBuilder,
   SlashCommandBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
@@ -231,10 +233,6 @@ function scheduleThreadAutoClose(thread) {
 
 function pickRandom(items) {
   return items[Math.floor(Math.random() * items.length)];
-}
-
-function createButton({ customId, label, style, disabled = false }) {
-  return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style).setDisabled(disabled);
 }
 
 function normalize(text) {
@@ -462,21 +460,9 @@ function createRobloxProfileEmbed(username, profile) {
 
     embed.addFields(
       { name: "프로필 링크", value: profile.profileUrl, inline: false },
-      { 
-        name: "표시 이름", 
-        value: profile.displayName || profile.username, 
-        inline: true 
-      },
-      { 
-        name: "계정 생성일", 
-        value: created ? formatDate(created) : "알 수 없음", 
-        inline: true 
-      },
-      { 
-        name: "계정 나이", 
-        value: accountAge, 
-        inline: true 
-      },
+      { name: "표시 이름", value: profile.displayName || profile.username, inline: true },
+      { name: "계정 생성일", value: created ? formatDate(created) : "알 수 없음", inline: true },
+      { name: "계정 나이", value: accountAge, inline: true },
       { name: "Caveful Games", value: getGroupRoleText(profile, 8485983), inline: false },
       { name: "Cave Army Rank Group [CAVE]", value: getGroupRoleText(profile, 562593164), inline: false },
       { name: "CA | Training&Doctrine Command", value: getGroupRoleText(profile, 724594083), inline: false },
@@ -609,14 +595,9 @@ function createAdminPanel() {
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId("admin:refresh")
-      .setLabel("상태 새로고침")
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId("admin:reset-idle")
-      .setLabel("무응답 타이머 리셋")
-      .setStyle(ButtonStyle.Primary)
-      .setDisabled(!config.allowedChannelId || !isIdleMessageEnabled()),
+      .setCustomId("admin:compose")
+      .setLabel("메시지 작성")
+      .setStyle(ButtonStyle.Primary),
   );
 
   return {
@@ -624,6 +605,23 @@ function createAdminPanel() {
     components: [row],
     ephemeral: true,
   };
+}
+
+function createAdminModal() {
+  return new ModalBuilder()
+    .setCustomId("admin:compose-modal")
+    .setTitle("관리자 메시지 전송")
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("adminMessage")
+          .setLabel("보낼 메시지")
+          .setStyle(TextInputStyle.Paragraph)
+          .setPlaceholder("이곳에 보낼 메시지를 입력하세요.")
+          .setRequired(true)
+          .setMaxLength(2000),
+      ),
+    );
 }
 
 async function getConfiguredChannel() {
@@ -867,6 +865,41 @@ function shouldIgnoreMessage(message) {
   return config.allowedChannelId && message.channel.id !== config.allowedChannelId;
 }
 
+async function handleAdminModalSubmit(interaction) {
+  if (!canUseAdminPanel(interaction)) {
+    await interaction.reply({
+      content: "이 명령어는 지정된 사용자만 사용할 수 있습니다.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const content = interaction.fields.getTextInputValue("adminMessage");
+  const channel = (await getConfiguredChannel()) || interaction.channel;
+
+  if (!channel?.isTextBased()) {
+    await interaction.reply({
+      content: "메시지를 보낼 채널을 찾지 못했습니다.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  try {
+    await channel.send({ content });
+    await interaction.reply({
+      content: `메시지를 <#${channel.id}> 채널로 전송했습니다.`,
+      ephemeral: true,
+    });
+  } catch (error) {
+    console.error("관리자 메시지 전송 중 오류:", error);
+    await interaction.reply({
+      content: "메시지 전송 중 오류가 발생했습니다.",
+      ephemeral: true,
+    });
+  }
+}
+
 async function handleAdminInteraction(interaction) {
   if (!canUseAdminPanel(interaction)) {
     await interaction.reply({
@@ -881,26 +914,10 @@ async function handleAdminInteraction(interaction) {
     return;
   }
 
-  if (interaction.customId === "admin:refresh") {
-    await interaction.update(createAdminPanel());
+  if (interaction.customId === "admin:compose") {
+    await interaction.showModal(createAdminModal());
     return;
   }
-
-  if (interaction.customId !== "admin:reset-idle") {
-    return;
-  }
-
-  const channel = await getConfiguredChannel();
-  if (!channel?.isTextBased()) {
-    await interaction.reply({
-      content: "무응답 타이머를 리셋할 채널을 찾지 못했습니다.",
-      ephemeral: true,
-    });
-    return;
-  }
-
-  scheduleIdleMessage(channel);
-  await interaction.update(createAdminPanel());
 }
 
 client.once(Events.ClientReady, async (readyClient) => {
@@ -926,6 +943,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === "admin") {
       await handleAdminInteraction(interaction);
+    }
+    return;
+  }
+
+  if (interaction.isModalSubmit()) {
+    if (interaction.customId === "admin:compose-modal") {
+      await handleAdminModalSubmit(interaction);
     }
     return;
   }
