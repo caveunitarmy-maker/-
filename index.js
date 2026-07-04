@@ -573,7 +573,7 @@ function createAdminPanel() {
       },
       {
         name: "작동 채널",
-        value: config.allowedChannelId ? `<#${config.allowedChannelId}>` : "전체 채널",
+        value: "명령어를 실행한 채널",
         inline: true,
       },
       {
@@ -876,7 +876,7 @@ async function handleAdminModalSubmit(interaction) {
   }
 
   const content = interaction.fields.getTextInputValue("adminMessage");
-  const channel = (await getConfiguredChannel()) || interaction.channel;
+  const channel = interaction.channel;
 
   if (!channel?.isTextBased()) {
     await interaction.reply({
