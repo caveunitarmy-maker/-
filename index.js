@@ -603,7 +603,7 @@ function createAdminPanel() {
   return {
     embeds: [embed],
     components: [row],
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   };
 }
 
@@ -880,7 +880,7 @@ async function handleAdminModalSubmit(interaction) {
   if (!channel?.isTextBased()) {
     await interaction.reply({
       content: "메시지를 보낼 채널을 찾지 못했습니다.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -889,13 +889,13 @@ async function handleAdminModalSubmit(interaction) {
     await channel.send({ content });
     await interaction.reply({
       content: `메시지를 <#${channel.id}> 채널로 전송했습니다.`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   } catch (error) {
     console.error("관리자 메시지 전송 중 오류:", error);
     await interaction.reply({
       content: "메시지 전송 중 오류가 발생했습니다.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 }
