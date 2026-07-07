@@ -113,7 +113,7 @@ const rules = [
     name: "missing-path",
     test: ({ hasNickname, hasPath }) => hasNickname && !hasPath,
     replies: [
-      `${ERROR_EMOJI} 뭐 빠뜨린거 없어? ${GUIDE_LINK}`,
+      `${ERROR_EMOJI} 이거 확인해줘 -> ${GUIDE_LINK}`,
       `${ERROR_EMOJI} 경로랑 그룹가입 신청여부도 같이 적어줘. ${GUIDE_LINK}`,
     ],
   },
@@ -129,7 +129,7 @@ const rules = [
     name: "missing-director-mention",
     test: ({ hasGroupJoin, hasMention }) => hasGroupJoin && !hasMention,
     replies: [
-      "마지막에 수뇌부 멘션도 붙여야지.. 수뇌부가 냄새 맡고 찾아오는건 아니잖아.",
+      "마지막에 수뇌부 멘션도 붙여야지..",
       "멘션하면 더 빨리 올지도..?",
       "멘션 한 번이면 될 일을 운에 맡기네.",
       "요청은 올렸고, 발견은 담당자 몫? 쉽지 않네.",
