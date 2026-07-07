@@ -113,16 +113,14 @@ const rules = [
     name: "missing-path",
     test: ({ hasNickname, hasPath }) => hasNickname && !hasPath,
     replies: [
-      `${ERROR_EMOJI} 이거 확인해줘 -> ${GUIDE_LINK}`,
-      `${ERROR_EMOJI} 경로랑 그룹가입 신청여부도 같이 적어줘. ${GUIDE_LINK}`,
+      "내가보기엔 양식이 안맞는것 같은데..",
     ],
   },
   {
     name: "missing-group-join",
     test: ({ hasPath, hasGroupJoin }) => hasPath && !hasGroupJoin,
     replies: [
-      `${ERROR_EMOJI} 경로까지 적어놓고 그룹가입 신청여부는 왜 빠진거임.. ${GUIDE_LINK}`,
-      `${ERROR_EMOJI} 그룹가입 신청여부도 적어줘. O인지 X인지 알아맞히라는건가.. ${GUIDE_LINK}`,
+      "내가보기엔 양식이 안맞는것 같은데..",
     ],
   },
   {
@@ -796,7 +794,7 @@ function isRejectKeyword(text) {
 function createThreadRejectEmbed(processor) {
   return new EmbedBuilder()
     .setTitle("요청 기각 처리")
-    .setDescription("수뇌부가 이 요청을 기각 처리하고 스레드를 닫았습니다.")
+    .setDescription("수뇌부가 이 요청을 기각 처리했습니다.")
     .setColor(0xeb5757)
     .addFields(
       { name: "처리한 수뇌부", value: `<@${processor.id}>`, inline: false },
@@ -806,7 +804,7 @@ function createThreadRejectEmbed(processor) {
 function createThreadCompleteEmbed(processor) {
   return new EmbedBuilder()
     .setTitle("요청 처리 완료")
-    .setDescription("수뇌부가 이 요청을 처리 완료하고 스레드를 닫았습니다.")
+    .setDescription("수뇌부가 이 요청을 처리 완료했습니다.")
     .setColor(0x2f80ed)
     .addFields(
       { name: "처리한 수뇌부", value: `<@${processor.id}>`, inline: false },
@@ -972,10 +970,8 @@ client.on(Events.MessageCreate, async (message) => {
   if (message.channel.isThread() && activeBotReplyThreads.has(message.channel.id) && isDirectorMember(message.member)) {
     if (isRejectKeyword(message.content)) {
       try {
-        clearThreadIdleTimer(message.channel);
         await reactToThreadStarterMessage(message.channel, message, "❌");
         await message.channel.send({ embeds: [createThreadRejectEmbed(message.member)] });
-        await message.channel.setArchived(true);
       } catch (error) {
         console.error("스레드 기각 처리 중 오류:", error);
       } finally {
@@ -983,10 +979,8 @@ client.on(Events.MessageCreate, async (message) => {
       }
     } else if (isCloseKeyword(message.content)) {
       try {
-        clearThreadIdleTimer(message.channel);
         await reactToThreadStarterMessage(message.channel, message, "✅");
         await message.channel.send({ embeds: [createThreadCompleteEmbed(message.member)] });
-        await message.channel.setArchived(true);
       } catch (error) {
         console.error("처리완료 처리 중 오류:", error);
       } finally {
