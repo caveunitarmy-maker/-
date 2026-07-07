@@ -782,7 +782,7 @@ function isCloseKeyword(text) {
 function createThreadCompleteEmbed(processor) {
   return new EmbedBuilder()
     .setTitle("요청 처리 완료")
-    .setDescription("수뇌부가 이 요청을 처리 완료했습니다.")
+    .setDescription("정상적으로 처리되었습니다. 이 스레드를 잠금 후 닫아주세요.")
     .setColor(0x2f80ed)
     .addFields(
       { name: "처리한 수뇌부", value: `<@${processor.id}>`, inline: false },
@@ -804,20 +804,6 @@ async function reactToThreadStarterMessage(thread, fallbackMessage, emoji) {
     }
   } catch (error) {
     console.error("스레드 시작 메시지에 리액션 추가 중 오류:", error);
-  }
-}
-
-// 처리완료 임베드 전송 후 봇이 직접 스레드를 잠그거나 닫지 않고,
-// 잠금 후 닫아달라는 안내 메시지만 남긴다.
-async function notifyThreadCloseGuidance(thread) {
-  if (!thread?.id || !thread?.isThread?.()) {
-    return;
-  }
-
-  try {
-    await thread.send("✅ 처리 완료 처리되었습니다. 확인 후 이 스레드를 잠금 후 닫아주세요.");
-  } catch (error) {
-    console.error("스레드 종료 안내 전송 중 오류:", error);
   }
 }
 
@@ -964,7 +950,6 @@ client.on(Events.MessageCreate, async (message) => {
       try {
         await reactToThreadStarterMessage(message.channel, message, "✅");
         await message.channel.send({ embeds: [createThreadCompleteEmbed(message.member)] });
-        await notifyThreadCloseGuidance(message.channel);
       } catch (error) {
         console.error("처리완료 처리 중 오류:", error);
       } finally {
