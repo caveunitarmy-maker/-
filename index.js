@@ -60,8 +60,8 @@ const CLOSE_KEYWORDS = ["처리완료", "처리 완료", "처완", "처치완료
 const REJECT_KEYWORDS = ["기각"];
 const GUIDE_LINK =
   "||https://discord.com/channels/1279685629751459902/1489031278610223154/1498703996066729984||";
-const ERROR_EMOJI = "<:remove:1520984632315744520>";
-const CHECK_EMOJI = "<:check:1520984249828642907>";
+const ERROR_EMOJI = "<:remove:1524095037485350992>";
+const CHECK_EMOJI = "<:check:1524094971043381301>";
 
 function parsePositiveInteger(value, fallback) {
   const parsed = Number.parseInt(value, 10);
