@@ -724,18 +724,16 @@ async function sendPreparedReply(message) {
   lastReplyAtByChannel.set(message.channel.id, now);
 
   const baseReply = pickRandom(analysis.rule.replies);
-  const isMissingMention = analysis.rule.name === "missing-director-mention";
   const isCompletedForm = analysis.rule.name === "completed-form";
-  const validityText = isCompletedForm ? "`양식 유효`" : undefined;
 
   const nickname = extractNicknameFromText(analysis.message.content);
   const robloxProfile = await fetchRobloxUserProfile(nickname);
   const profileEmbed = createRobloxProfileEmbed(nickname, robloxProfile);
 
   const replyOptions = {
-    content: isMissingMention
-      ? baseReply
-      : formatReplyWithValidity(baseReply, validityText, isCompletedForm),
+    content: isCompletedForm
+      ? formatReplyWithValidity(baseReply, "`양식 유효`", true)
+      : baseReply,
     embeds: [profileEmbed],
   };
 
@@ -765,8 +763,7 @@ function stripLeadingEmoji(text) {
 function formatReplyWithValidity(baseReply, validityText, isValid) {
   const cleanedReply = stripLeadingEmoji(baseReply).trim();
   const validityPrefix = isValid ? `${CHECK_EMOJI} ` : `${ERROR_EMOJI} `;
-  const prefixLine = validityText ? `${validityPrefix}${validityText}` : validityPrefix.trim();
-  return `${prefixLine}\n> ${cleanedReply}`;
+  return `${validityPrefix}${validityText}\n> ${cleanedReply}`;
 }
 
 function isCloseKeyword(text) {
