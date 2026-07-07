@@ -113,14 +113,14 @@ const rules = [
     name: "missing-path",
     test: ({ hasNickname, hasPath }) => hasNickname && !hasPath,
     replies: [
-      "내가보기엔 양식이 안맞는것 같은데..",
+      `내가보기엔 양식이 안맞는것 같은데.. ${GUIDE_LINK}`,
     ],
   },
   {
     name: "missing-group-join",
     test: ({ hasPath, hasGroupJoin }) => hasPath && !hasGroupJoin,
     replies: [
-      "내가보기엔 양식이 안맞는것 같은데..",
+      `내가보기엔 양식이 안맞는것 같은데.. ${GUIDE_LINK}`,
     ],
   },
   {
@@ -724,13 +724,18 @@ async function sendPreparedReply(message) {
   lastReplyAtByChannel.set(message.channel.id, now);
 
   const baseReply = pickRandom(analysis.rule.replies);
+  const isMissingMention = analysis.rule.name === "missing-director-mention";
+  const isCompletedForm = analysis.rule.name === "completed-form";
+  const validityText = isCompletedForm ? "`양식 유효`" : undefined;
 
   const nickname = extractNicknameFromText(analysis.message.content);
   const robloxProfile = await fetchRobloxUserProfile(nickname);
   const profileEmbed = createRobloxProfileEmbed(nickname, robloxProfile);
 
   const replyOptions = {
-    content: baseReply,
+    content: isMissingMention
+      ? baseReply
+      : formatReplyWithValidity(baseReply, validityText, isCompletedForm),
     embeds: [profileEmbed],
   };
 
@@ -751,6 +756,17 @@ const DIRECTOR_ROLE_IDS = new Set([DIRECTOR_ROLE_ID, "1520765889337753791"]);
 
 function isDirectorMember(member) {
   return [...DIRECTOR_ROLE_IDS].some((roleId) => member?.roles?.cache?.has(roleId));
+}
+
+function stripLeadingEmoji(text) {
+  return text.replace(/^[\s\u200B]*(?:(?:<a?:[\w\d_]+:\d+>)|[\p{Emoji_Presentation}\p{Extended_Pictographic}]|[:;][\-~]?[()DPpOo])+[\s\u200B]*/u, "");
+}
+
+function formatReplyWithValidity(baseReply, validityText, isValid) {
+  const cleanedReply = stripLeadingEmoji(baseReply).trim();
+  const validityPrefix = isValid ? `${CHECK_EMOJI} ` : `${ERROR_EMOJI} `;
+  const prefixLine = validityText ? `${validityPrefix}${validityText}` : validityPrefix.trim();
+  return `${prefixLine}\n> ${cleanedReply}`;
 }
 
 function isCloseKeyword(text) {
