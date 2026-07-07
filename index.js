@@ -807,6 +807,20 @@ async function reactToThreadStarterMessage(thread, fallbackMessage, emoji) {
   }
 }
 
+// 처리완료 임베드 전송 후 봇이 직접 스레드를 잠그거나 닫지 않고,
+// 잠금 후 닫아달라는 안내 메시지만 남긴다.
+async function notifyThreadCloseGuidance(thread) {
+  if (!thread?.id || !thread?.isThread?.()) {
+    return;
+  }
+
+  try {
+    await thread.send("✅ 처리 완료 처리되었습니다. 확인 후 이 스레드를 잠금 후 닫아주세요.");
+  } catch (error) {
+    console.error("스레드 종료 안내 전송 중 오류:", error);
+  }
+}
+
 function scheduleIdleMessage(channel) {
   if (!isIdleMessageEnabled()) {
     return;
@@ -950,6 +964,7 @@ client.on(Events.MessageCreate, async (message) => {
       try {
         await reactToThreadStarterMessage(message.channel, message, "✅");
         await message.channel.send({ embeds: [createThreadCompleteEmbed(message.member)] });
+        await notifyThreadCloseGuidance(message.channel);
       } catch (error) {
         console.error("처리완료 처리 중 오류:", error);
       } finally {
