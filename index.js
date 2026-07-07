@@ -57,7 +57,6 @@ const ADMIN_USER_ID = "1108736717063733309";
 const DIRECTOR_ROLE_ID = "1434909470106058842";
 const DIRECTOR_MENTION = `<@&${DIRECTOR_ROLE_ID}>`;
 const CLOSE_KEYWORDS = ["처리완료", "처리 완료", "처완", "처치완료", "처리완", "완려"];
-const REJECT_KEYWORDS = ["기각"];
 const GUIDE_LINK =
   "||https://discord.com/channels/1279685629751459902/1489031278610223154/1498703996066729984||";
 const ERROR_EMOJI = "<:remove:1524097189666750545>";
@@ -780,25 +779,6 @@ function isCloseKeyword(text) {
   return CLOSE_KEYWORDS.some((keyword) => normalized.includes(normalize(keyword)));
 }
 
-function isRejectKeyword(text) {
-  if (!text) {
-    return false;
-  }
-
-  const normalized = normalize(text);
-  return REJECT_KEYWORDS.some((keyword) => normalized.includes(normalize(keyword)));
-}
-
-function createThreadRejectEmbed(processor) {
-  return new EmbedBuilder()
-    .setTitle("요청 기각 처리")
-    .setDescription("수뇌부가 이 요청을 기각 처리했습니다.")
-    .setColor(0xeb5757)
-    .addFields(
-      { name: "처리한 수뇌부", value: `<@${processor.id}>`, inline: false },
-    );
-}
-
 function createThreadCompleteEmbed(processor) {
   return new EmbedBuilder()
     .setTitle("요청 처리 완료")
@@ -966,16 +946,7 @@ client.on(Events.MessageCreate, async (message) => {
   }
 
   if (message.channel.isThread() && activeBotReplyThreads.has(message.channel.id) && isDirectorMember(message.member)) {
-    if (isRejectKeyword(message.content)) {
-      try {
-        await reactToThreadStarterMessage(message.channel, message, "❌");
-        await message.channel.send({ embeds: [createThreadRejectEmbed(message.member)] });
-      } catch (error) {
-        console.error("스레드 기각 처리 중 오류:", error);
-      } finally {
-        activeBotReplyThreads.delete(message.channel.id);
-      }
-    } else if (isCloseKeyword(message.content)) {
+    if (isCloseKeyword(message.content)) {
       try {
         await reactToThreadStarterMessage(message.channel, message, "✅");
         await message.channel.send({ embeds: [createThreadCompleteEmbed(message.member)] });
