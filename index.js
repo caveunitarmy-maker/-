@@ -214,6 +214,8 @@ const rules = [
       "멘션 한 번이면 될 일을 운에 맡기네.",
       "요청은 올렸고, 발견은 담당자 몫? 쉽지 않네.",
       "부르지도 않았는데 오면 그게 더 무섭지.",
+      "멘션은 못참지.",
+      "멘션을 빼먹으면 그대로 묻힌다고.",
     ],
   },
   {
@@ -245,6 +247,12 @@ const rules = [
       `${CHECK_EMOJI} 처리 중일 수도 있고... 커피 마시는 중일 수도 있고...`,
       `${CHECK_EMOJI} 기다리는 동안 심호흡 한 번.`,
       `${CHECK_EMOJI} 오늘도 평화로운 수뇌부 대기실.`,
+      `${CHECK_EMOJI} 읽씹만 아니면 된다..`,
+      `${CHECK_EMOJI} 도움...`,
+      `${CHECK_EMOJI} 설마 또 타이밍 게임인가.`,
+      `${CHECK_EMOJI} 그래. 밥은 먹고 하자고.`,
+      `${CHECK_EMOJI} 오늘 안에는 오겠지...?`,
+      `${CHECK_EMOJI} 설마 알림을 꺼둔 건 아니겠지.`,
     ],
   },
 ];
@@ -468,6 +476,19 @@ function hasValidGroupJoinValue(text) {
   return /^(o|x|0|ㅇ|ㄴ|○|×)$/i.test(value.trim());
 }
 
+// 링크(URL, 도메인) 형태의 문자열은 닉네임 후보에서 제외하기 위해 토큰화 전에 미리 제거한다.
+// - https?:// 또는 www. 로 시작하는 구간 전체
+// - "word.tld" 형태의 도메인 같은 문자열(예: abc.com, discord.gg)
+const LINK_LIKE_PATTERN = /\b((?:https?:\/\/|www\.)\S+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/\S*)?)\b/gi;
+
+function stripLinkLikeText(text) {
+  return String(text ?? "").replace(LINK_LIKE_PATTERN, " ");
+}
+
+function isNumericOnlyToken(token) {
+  return /^[0-9]+$/.test(token);
+}
+
 function extractNicknameFromText(text) {
   const rawValue = getFieldValue(text, [
     "닉네임 및 계급",
@@ -486,23 +507,55 @@ function extractNicknameFromText(text) {
   }
 
   for (const candidate of candidates) {
-    const tokens = candidate
-      .split(/[^A-Za-z0-9_가-힣]+/)
+    const sanitizedCandidate = stripLinkLikeText(candidate);
+
+    // 닉네임 구성 문자는 영문(A-Za-z), 숫자(0-9), 언더스코어(_)만 인정한다.
+    // 그 외 문자(한글, 공백, 특수문자, 링크에서 남은 구두점 등)는 전부 구분자로 취급한다.
+    const tokens = sanitizedCandidate
+      .split(/[^A-Za-z0-9_]+/)
       .map((token) => token.trim())
       .filter(Boolean);
 
     for (const token of tokens) {
+      if (isNumericOnlyToken(token)) {
+        continue; // 숫자로만 이루어진 토큰은 닉네임으로 인정하지 않는다.
+      }
+
       const letters = (token.match(/[A-Za-z]+/g) || []).join("");
       const hasEnoughLetters = letters.length >= 3;
-      const hasUsernameLikeChars = /[A-Za-z0-9_]/.test(token);
-      if (hasEnoughLetters && hasUsernameLikeChars) {
+      if (hasEnoughLetters) {
         return token;
       }
     }
   }
 
-  const fallbackToken = (rawValue.match(/[A-Za-z0-9_]+/g) || []).join("");
-  return fallbackToken;
+  const sanitizedRawValue = stripLinkLikeText(rawValue);
+  const fallbackTokens = (sanitizedRawValue.match(/[A-Za-z0-9_]+/g) || []).filter(
+    (token) => !isNumericOnlyToken(token),
+  );
+
+  return fallbackTokens[0] || "";
+}
+
+// 그룹 조회는 프로필 조회와 별도로 성공/실패를 추적한다.
+// API 호출 실패(네트워크 오류, 레이트리밋 등)와 "실제로 그 그룹에 가입되어 있지 않음"을
+// 구분하지 않으면, 호출이 실패했을 뿐인데도 모든 그룹이 "가입 안 됨"으로 잘못 표시될 수 있다.
+async function fetchRobloxGroups(userId) {
+  try {
+    const groupResponse = await fetch(`https://groups.roblox.com/v2/users/${userId}/groups/roles`);
+    if (!groupResponse.ok) {
+      return { groups: [], failed: true };
+    }
+
+    const groupJson = await groupResponse.json();
+    return {
+      groups: Array.isArray(groupJson?.data) ? groupJson.data : [],
+      failed: false,
+    };
+  } catch (error) {
+    console.error("Roblox 그룹 조회 중 오류:", error);
+    return { groups: [], failed: true };
+  }
 }
 
 async function fetchRobloxUserProfile(username) {
@@ -530,8 +583,7 @@ async function fetchRobloxUserProfile(username) {
     const userId = result.id;
     const detailsResponse = await fetch(`https://users.roblox.com/v1/users/${userId}`);
     const details = detailsResponse.ok ? await detailsResponse.json() : null;
-    const groupResponse = await fetch(`https://groups.roblox.com/v2/users/${userId}/groups/roles`);
-    const groupJson = groupResponse.ok ? await groupResponse.json() : null;
+    const { groups, failed: groupsFetchFailed } = await fetchRobloxGroups(userId);
 
     return {
       exists: true,
@@ -540,7 +592,8 @@ async function fetchRobloxUserProfile(username) {
       displayName: result.displayName,
       profileUrl: `https://www.roblox.com/users/${userId}/profile`,
       created: details?.created,
-      groups: Array.isArray(groupJson?.data) ? groupJson.data : [],
+      groups,
+      groupsFetchFailed,
     };
   } catch (error) {
     console.error("Roblox 프로필 조회 중 오류:", error);
@@ -580,11 +633,14 @@ function createRobloxProfileEmbed(username, profile) {
 }
 
 function getGroupRoleText(profile, groupId, notJoinedText = "가입 안 됨") {
-  if (!profile?.groups?.length) {
+  // 그룹 API 호출 자체가 실패한 경우에만 "조회할 수 없음"을 띄운다.
+  // 호출은 성공했는데 결과 배열이 비어있는 경우(= 실제로 어떤 그룹에도 가입돼 있지 않음)는
+  // 정상적으로 "가입 안 됨" 계열 문구로 표시되어야 한다.
+  if (profile?.groupsFetchFailed) {
     return "조회할 수 없음";
   }
 
-  const group = profile.groups.find((item) => item.group?.id === groupId);
+  const group = profile?.groups?.find((item) => item.group?.id === groupId);
   if (!group) {
     return notJoinedText;
   }
