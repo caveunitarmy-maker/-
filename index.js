@@ -135,8 +135,13 @@ async function handleFaqSelectInteraction(interaction) {
     return;
   }
 
+  const faqEmbed = new EmbedBuilder()
+    .setTitle(`${faqItem.emoji ? `${faqItem.emoji} ` : ""}${faqItem.label}`)
+    .setDescription(faqItem.answer)
+    .setColor(0x2f80ed);
+
   await interaction.reply({
-    content: `**${faqItem.label}**\n${faqItem.answer}`,
+    embeds: [faqEmbed],
     flags: MessageFlags.Ephemeral,
   });
 }
