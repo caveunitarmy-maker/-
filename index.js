@@ -195,14 +195,14 @@ const rules = [
     name: "missing-path",
     test: ({ hasNickname, hasPath }) => hasNickname && !hasPath,
     replies: [
-      `내가보기엔 양식이 안맞는것 같은데.. ${GUIDE_LINK}`,
+      `내가 보기엔 양식이 안맞는것 같은데.. ${GUIDE_LINK}`,
     ],
   },
   {
     name: "missing-group-join",
     test: ({ hasPath, hasGroupJoin }) => hasPath && !hasGroupJoin,
     replies: [
-      `내가보기엔 양식이 안맞는것 같은데.. ${GUIDE_LINK}`,
+      `내가 보기엔 양식이 안맞는것 같은데.. ${GUIDE_LINK}`,
     ],
   },
   {
