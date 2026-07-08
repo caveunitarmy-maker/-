@@ -305,6 +305,10 @@ function scheduleThreadAutoClose(thread) {
       await thread.setArchived(true);
     } catch (error) {
       console.error("스레드 자동 종료 중 오류:", error);
+    } finally {
+      // 처리완료 없이 자동 보관되는 스레드가 activeBotReplyThreads에 계속 남아
+      // 메모리가 누적되는 것을 막기 위해 여기서 함께 정리한다.
+      activeBotReplyThreads.delete(thread.id);
     }
   }, THREAD_INACTIVITY_TIMEOUT_MS);
 
@@ -334,15 +338,33 @@ function hasAll(text, keywords) {
 // 글자 하나하나 사이에 \s*를 끼워 넣은 정규식을 만든다. 라벨 뒤에는 공백 또는 줄 끝이
 // 와야만(단어 경계) 매칭을 인정해서 "닉네임" 라벨이 "닉네임변경여부" 같은 다른 단어
 // 중간에 잘못 걸리는 걸 막는다.
+// 같은 라벨에 대해 매 메시지마다 정규식을 새로 만들 필요가 없으므로 캐시해서 재사용한다.
+const looseLabelPatternSourceCache = new Map();
 function buildLooseLabelPatternSource(label) {
+  if (looseLabelPatternSourceCache.has(label)) {
+    return looseLabelPatternSourceCache.get(label);
+  }
+
   const escapedChars = [...normalize(label)].map((char) =>
     char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
   );
-  return escapedChars.map((char, index) => (index === 0 ? char : `(?:\\s|[:.\\-])*${char}`)).join("");
+  const source = escapedChars
+    .map((char, index) => (index === 0 ? char : `(?:\\s|[:.\\-])*${char}`))
+    .join("");
+
+  looseLabelPatternSourceCache.set(label, source);
+  return source;
 }
 
+const looseLabelPatternCache = new Map();
 function buildLooseLabelPattern(label) {
-  return new RegExp(`^${buildLooseLabelPatternSource(label)}(?=\\s|$)`, "i");
+  if (looseLabelPatternCache.has(label)) {
+    return looseLabelPatternCache.get(label);
+  }
+
+  const pattern = new RegExp(`^${buildLooseLabelPatternSource(label)}(?=\\s|$)`, "i");
+  looseLabelPatternCache.set(label, pattern);
+  return pattern;
 }
 
 function getFieldValue(text, labels) {
@@ -350,20 +372,24 @@ function getFieldValue(text, labels) {
   const labelsByLength = [...labels].sort((a, b) => normalize(b).length - normalize(a).length);
   const allLabelSources = labelsByLength.map(buildLooseLabelPatternSource).join("|");
 
+  // 줄 단위 매칭에 쓰이는 정규식은 라인 내용과 무관하게 후보 라벨에만 의존하므로,
+  // 줄마다 다시 컴파일하지 않도록 라인 순회 전에 후보 라벨당 한 번씩만 생성한다.
+  const lineMatchersByCandidate = labelsByLength.map((candidate) => ({
+    candidate,
+    regex: new RegExp(
+      `(^|\\s|[\\p{P}\\p{S}])${buildLooseLabelPatternSource(candidate)}(?:\\s*[:\\-]?\\s*|\\s+)([^:\\n\\r]+?)(?=(?:${allLabelSources})(?:\\s*[:\\-]?\\s*|\\s+)|$)`,
+      "iu",
+    ),
+  }));
+
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line) {
       continue;
     }
 
-    for (const candidate of labelsByLength) {
-      const labelSource = buildLooseLabelPatternSource(candidate);
-      const match = line.match(
-        new RegExp(
-          `(^|\\s|[\\p{P}\\p{S}])${labelSource}(?:\\s*[:\\-]?\\s*|\\s+)([^:\\n\\r]+?)(?=(?:${allLabelSources})(?:\\s*[:\\-]?\\s*|\\s+)|$)`,
-          "iu",
-        ),
-      );
+    for (const { regex } of lineMatchersByCandidate) {
+      const match = line.match(regex);
       if (!match) {
         continue;
       }
@@ -930,7 +956,7 @@ async function handleAdminModalSubmit(interaction) {
   if (!canUseAdminPanel(interaction)) {
     await interaction.reply({
       content: "이 명령어는 지정된 사용자만 사용할 수 있습니다.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -965,7 +991,7 @@ async function handleAdminInteraction(interaction) {
   if (!canUseAdminPanel(interaction)) {
     await interaction.reply({
       content: "이 명령어는 지정된 사용자만 사용할 수 있습니다.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -1054,11 +1080,8 @@ client.on(Events.MessageCreate, async (message) => {
   }
 
   if (message.channel.isThread()) {
-    const existingTimer = threadIdleTimers.get(message.channel.id);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-      threadIdleTimers.delete(message.channel.id);
-    }
+    // scheduleThreadAutoClose가 내부적으로 기존 타이머를 정리(clearThreadIdleTimer)하고
+    // 새로 예약하므로, 여기서 수동으로 다시 지울 필요는 없다.
     scheduleThreadAutoClose(message.channel);
   }
 
@@ -1084,7 +1107,7 @@ const PORT = process.env.PORT || 3000;
 // 5분(300초)마다 https://soyeongi.onrender.com을 호출하는 함수
 function keepAliveRequest() {
   const keepAliveUrl = "https://soyeongi.onrender.com";
-  
+
   fetch(keepAliveUrl)
     .then((response) => {
       const timestamp = new Date().toISOString();
