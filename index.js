@@ -61,8 +61,6 @@ const GUIDE_LINK =
   "||https://discord.com/channels/1279685629751459902/1489031278610223154/1498703996066729984||";
 const ERROR_EMOJI = "<:remove:1524097189666750545>";
 const CHECK_EMOJI = "<:check:1524094971043381301>";
-const SERVER_NICKNAME_FORMAT_PATTERN = /^\[[^\]]+\]\s*\(ADS\)\s*\S.*$/;
-const SERVER_NICKNAME_FORMAT_NOTICE = "`[계급] (ADS) 닉네임`로 변경해주세요";
 
 function parsePositiveInteger(value, fallback) {
   const parsed = Number.parseInt(value, 10);
@@ -732,17 +730,10 @@ async function sendPreparedReply(message) {
   const robloxProfile = await fetchRobloxUserProfile(nickname);
   const profileEmbed = createRobloxProfileEmbed(nickname, robloxProfile);
 
-  const nicknameFormatNotice = getServerNicknameFormatNotice(analysis.message.member);
-
   const replyOptions = {
     content: isMissingMention
       ? baseReply
-      : formatReplyWithValidity(
-          baseReply,
-          isCompletedForm ? "`양식 유효`" : undefined,
-          isCompletedForm,
-          nicknameFormatNotice,
-        ),
+      : formatReplyWithValidity(baseReply, isCompletedForm ? "`양식 유효`" : undefined, isCompletedForm),
     embeds: [profileEmbed],
   };
 
@@ -769,37 +760,14 @@ function stripLeadingEmoji(text) {
   return text.replace(/^[\s\u200B]*(?:(?:<a?:[\w\d_]+:\d+>)|[\p{Emoji_Presentation}\p{Extended_Pictographic}]|[:;][\-~]?[()DPpOo])+[\s\u200B]*/u, "");
 }
 
-// 서버 별명이 "[계급] (ADS) 닉네임" 형식인지 확인한다. 별명을 가져올 수 없는 경우(권한 문제 등)에는
-// 형식 오류로 잘못 안내하지 않도록 유효한 것으로 간주한다.
-function hasValidServerNicknameFormat(member) {
-  const displayName = member?.displayName?.trim();
-  if (!displayName) {
-    return true;
-  }
-
-  return SERVER_NICKNAME_FORMAT_PATTERN.test(displayName);
-}
-
-function getServerNicknameFormatNotice(member) {
-  return hasValidServerNicknameFormat(member) ? "" : SERVER_NICKNAME_FORMAT_NOTICE;
-}
-
-function formatReplyWithValidity(baseReply, validityText, isValid, extraNotice) {
+function formatReplyWithValidity(baseReply, validityText, isValid) {
   const cleanedReply = stripLeadingEmoji(baseReply).trim();
-  const lines = [];
-
-  if (validityText) {
-    const validityPrefix = isValid ? `${CHECK_EMOJI} ` : `${ERROR_EMOJI} `;
-    lines.push(`${validityPrefix}${validityText}`);
+  if (!validityText) {
+    return `> ${cleanedReply}`;
   }
 
-  lines.push(`> ${cleanedReply}`);
-
-  if (extraNotice) {
-    lines.push(extraNotice);
-  }
-
-  return lines.join("\n");
+  const validityPrefix = isValid ? `${CHECK_EMOJI} ` : `${ERROR_EMOJI} `;
+  return `${validityPrefix}${validityText}\n> ${cleanedReply}`;
 }
 
 function isCloseKeyword(text) {
