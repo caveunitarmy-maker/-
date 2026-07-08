@@ -9,6 +9,7 @@ const {
   MessageFlags,
   ModalBuilder,
   SlashCommandBuilder,
+  StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle,
 } = require("discord.js");
@@ -61,6 +62,84 @@ const GUIDE_LINK =
   "||https://discord.com/channels/1279685629751459902/1489031278610223154/1498703996066729984||";
 const ERROR_EMOJI = "<:remove:1524097189666750545>";
 const CHECK_EMOJI = "<:check:1524094971043381301>";
+
+const FAQ_SELECT_CUSTOM_ID = "faq:select";
+const FAQ_ITEMS = [
+  {
+    value: "how-long",
+    label: "인증은 얼마나 걸리나요?",
+    emoji: "⏱️",
+    answer:
+      "보통 수뇌부가 확인하는 대로 처리돼요. 아무리 지나도 소식이 없으면 새 메시지로 인증 요청을 남겨주는것도 좋아요.",
+  },
+  {
+    value: "wrong-nickname",
+    label: "닉네임이 다르게 표시돼요",
+    emoji: "🔎",
+    answer:
+      "닉네임 및 계급 항목에 정확한 로블록스 유저네임을 적었는지 확인해주세요. 표시 이름(닉네임)이 아니라 실제 계정 아이디 기준으로 조회돼요.",
+  },
+  {
+    value: "group-not-joined",
+    label: "그룹 가입 요청 수락이 안 됐다고 나와요",
+    emoji: "🚫",
+    answer:
+      "`CA | Training&Doctrine Command` 그룹 기준 수뇌부가 인증채널에서 확인하고 승인하는 방식이에요. 정상이니 기다리면 돼요.",
+  },
+  {
+    value: "form-format",
+    label: "양식은 어디서 확인하나요?",
+    emoji: "📄",
+    answer: `양식 안내는 여기서 확인할 수 있어요: ${GUIDE_LINK}`,
+  },
+  {
+    value: "form-mismatch",
+    label: "양식이 맞지 않다고 떠요",
+    emoji: "⚠️",
+    answer:
+      "가끔씩 오탐이 발생해요. 수뇌부 재량으로 인증처리가 진행되니 크게 신경쓰지 않아도 돼요.",
+  },
+  {
+    value: "thread-closed",
+    label: "스레드가 자동으로 닫혔어요",
+    emoji: "🔒",
+    answer:
+      "일정 시간 동안 활동이 없으면 수뇌부가 스레드를 보관 처리해요. 다시 요청하고 싶다면 새 메시지로 인증 요청을 남겨주세요.",
+  },
+];
+
+function createFaqSelectRow() {
+  const selectMenu = new StringSelectMenuBuilder()
+    .setCustomId(FAQ_SELECT_CUSTOM_ID)
+    .setPlaceholder("자주 묻는 질문")
+    .addOptions(
+      FAQ_ITEMS.map((item) => ({
+        label: item.label,
+        value: item.value,
+        emoji: item.emoji,
+      })),
+    );
+
+  return new ActionRowBuilder().addComponents(selectMenu);
+}
+
+async function handleFaqSelectInteraction(interaction) {
+  const selectedValue = interaction.values?.[0];
+  const faqItem = FAQ_ITEMS.find((item) => item.value === selectedValue);
+
+  if (!faqItem) {
+    await interaction.reply({
+      content: "질문을 찾지 못했어요.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  await interaction.reply({
+    content: `**${faqItem.label}**\n${faqItem.answer}`,
+    flags: MessageFlags.Ephemeral,
+  });
+}
 
 function parsePositiveInteger(value, fallback) {
   const parsed = Number.parseInt(value, 10);
@@ -735,6 +814,7 @@ async function sendPreparedReply(message) {
       ? baseReply
       : formatReplyWithValidity(baseReply, isCompletedForm ? "`양식 유효`" : undefined, isCompletedForm),
     embeds: [profileEmbed],
+    components: [createFaqSelectRow()],
   };
 
   const thread = await getOrCreateReplyThread(analysis.message);
@@ -927,6 +1007,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isModalSubmit()) {
     if (interaction.customId === "admin:compose-modal") {
       await handleAdminModalSubmit(interaction);
+    }
+    return;
+  }
+
+  if (interaction.isStringSelectMenu()) {
+    if (interaction.customId === FAQ_SELECT_CUSTOM_ID) {
+      await handleFaqSelectInteraction(interaction);
     }
     return;
   }
