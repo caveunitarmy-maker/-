@@ -463,21 +463,21 @@ function createRobloxProfileEmbed(username, profile) {
       { name: "계정 나이", value: accountAge, inline: true },
       { name: "Caveful Games", value: getGroupRoleText(profile, 8485983), inline: false },
       { name: "Cave Army Rank Group [CAVE]", value: getGroupRoleText(profile, 562593164), inline: false },
-      { name: "CA | Training&Doctrine Command", value: getGroupRoleText(profile, 724594083), inline: false },
+      { name: "CA | Training&Doctrine Command", value: getGroupRoleText(profile, 724594083, "가입요청 수락 안 됨"), inline: false },
     );
   }
 
   return embed;
 }
 
-function getGroupRoleText(profile, groupId) {
+function getGroupRoleText(profile, groupId, notJoinedText = "가입 안 됨") {
   if (!profile?.groups?.length) {
     return "조회할 수 없음";
   }
 
   const group = profile.groups.find((item) => item.group?.id === groupId);
   if (!group) {
-    return "가입 안 됨";
+    return notJoinedText;
   }
 
   return `✅ ${group.role?.name || "알 수 없음"} (Rank ${group.role?.rank ?? "-"})`;
