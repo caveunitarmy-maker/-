@@ -734,8 +734,9 @@ async function getThreadLastActivityTimestamp(thread) {
 }
 
 // 재시작 여부와 무관하게 항상 정확하도록, 메모리(Set/Map)에 의존하지 않고
-// Discord API에서 채널의 활성/보관 스레드 목록을 직접 조회해서 판단한다.
-// - 전체 스레드 수: 채널에 열려있는(활성+보관) 모든 스레드
+// Discord API에서 채널의 활성 스레드 목록을 직접 조회해서 판단한다.
+// 보관된(archived) 스레드는 탐지 대상에서 제외한다.
+// - 전체 스레드 수: 채널에 열려있는 활성 스레드
 // - 소영이가 연 스레드 수: 그 중 ownerId가 봇 자신인 스레드 (message.startThread로 생성됨)
 // - 무활동 스레드: 소영이가 연 스레드 중 마지막 활동이 6시간 이상 지난 것
 async function getBotThreadsInfo(channel) {
@@ -743,15 +744,8 @@ async function getBotThreadsInfo(channel) {
     return undefined;
   }
 
-  const [activeResult, archivedResult] = await Promise.all([
-    channel.threads.fetchActive().catch(() => undefined),
-    channel.threads.fetchArchived().catch(() => undefined),
-  ]);
-
-  const allThreads = [
-    ...(activeResult?.threads?.values() ?? []),
-    ...(archivedResult?.threads?.values() ?? []),
-  ];
+  const activeResult = await channel.threads.fetchActive().catch(() => undefined);
+  const allThreads = [...(activeResult?.threads?.values() ?? [])];
 
   const botThreads = allThreads.filter((thread) => thread.ownerId === client.user.id);
 
