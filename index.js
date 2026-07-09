@@ -268,6 +268,10 @@ const client = new Client({
 const lastReplyAtByChannel = new Map();
 const activeBotReplyThreads = new Set();
 const threadIdleTimers = new Map();
+// 스레드별 "마지막 활동 시각"(ms epoch)을 기록한다. scheduleThreadAutoClose가 호출될 때마다
+// (=활동이 감지될 때마다) 갱신되고, 스레드가 처리완료되거나 자동 보관되면 함께 정리된다.
+// /admin 패널에서 "6시간 이상 비활성 스레드 수"를 실시간으로 계산하는 데 사용된다.
+const threadLastActivityAt = new Map();
 let idleTimer;
 
 function isIdleMessageEnabled() {
@@ -301,6 +305,7 @@ function scheduleThreadAutoClose(thread) {
   }
 
   clearThreadIdleTimer(thread);
+  threadLastActivityAt.set(thread.id, Date.now());
 
   const timer = setTimeout(async () => {
     threadIdleTimers.delete(thread.id);
@@ -314,9 +319,10 @@ function scheduleThreadAutoClose(thread) {
     } catch (error) {
       console.error("스레드 자동 종료 중 오류:", error);
     } finally {
-      // 처리완료 없이 자동 보관되는 스레드가 activeBotReplyThreads에 계속 남아
-      // 메모리가 누적되는 것을 막기 위해 여기서 함께 정리한다.
+      // 처리완료 없이 자동 보관되는 스레드가 activeBotReplyThreads / threadLastActivityAt에
+      // 계속 남아 메모리가 누적되는 것을 막기 위해 여기서 함께 정리한다.
       activeBotReplyThreads.delete(thread.id);
+      threadLastActivityAt.delete(thread.id);
     }
   }, THREAD_INACTIVITY_TIMEOUT_MS);
 
@@ -717,7 +723,81 @@ function canUseAdminPanel(interaction) {
   return interaction.user.id === ADMIN_USER_ID;
 }
 
-function createAdminPanel() {
+// 현재 채널의 전체 스레드 수, 소영이가 연 스레드 수, 그 중 6시간 이상 비활성인
+// 스레드 수를 계산한다. 활성 스레드 목록(fetchActive)과 최근 보관된 스레드 목록
+// (fetchArchived, 최대 100개까지 첫 페이지만)을 합쳐서 전체 개수를 센다.
+async function getThreadStats(channel) {
+  const stats = {
+    totalThreadCount: 0,
+    botOpenedThreadCount: 0,
+    staleThreadIds: [],
+  };
+
+  if (!channel?.threads) {
+    return stats;
+  }
+
+  try {
+    const [activeThreadsResult, archivedThreadsResult] = await Promise.all([
+      channel.threads.fetchActive().catch(() => undefined),
+      channel.threads.fetchArchived().catch(() => undefined),
+    ]);
+
+    const threadsInChannel = new Map();
+    activeThreadsResult?.threads?.forEach((thread) => threadsInChannel.set(thread.id, thread));
+    archivedThreadsResult?.threads?.forEach((thread) => threadsInChannel.set(thread.id, thread));
+
+    stats.totalThreadCount = threadsInChannel.size;
+
+    const now = Date.now();
+    for (const threadId of threadsInChannel.keys()) {
+      if (!activeBotReplyThreads.has(threadId)) {
+        continue;
+      }
+
+      stats.botOpenedThreadCount += 1;
+
+      const lastActivity = threadLastActivityAt.get(threadId);
+      if (lastActivity && now - lastActivity >= THREAD_INACTIVITY_TIMEOUT_MS) {
+        stats.staleThreadIds.push(threadId);
+      }
+    }
+  } catch (error) {
+    console.error("스레드 통계 조회 중 오류:", error);
+  }
+
+  return stats;
+}
+
+// 6시간 이상 비활성 상태인 스레드들을 일괄 보관(닫기) 처리하고, 관련 상태(타이머,
+// activeBotReplyThreads, threadLastActivityAt)를 정리한다.
+async function closeStaleThreads(staleThreadIds) {
+  let closed = 0;
+  let failed = 0;
+
+  for (const threadId of staleThreadIds) {
+    clearThreadIdleTimer({ id: threadId });
+    activeBotReplyThreads.delete(threadId);
+    threadLastActivityAt.delete(threadId);
+
+    try {
+      const thread = await client.channels.fetch(threadId);
+      if (thread && !thread.archived) {
+        await thread.setArchived(true);
+      }
+      closed += 1;
+    } catch (error) {
+      console.error(`스레드(${threadId}) 강제 종료 중 오류:`, error);
+      failed += 1;
+    }
+  }
+
+  return { closed, failed };
+}
+
+async function createAdminPanel(channel) {
+  const { totalThreadCount, botOpenedThreadCount, staleThreadIds } = await getThreadStats(channel);
+
   const embed = new EmbedBuilder()
     .setTitle("마스터 컨트롤 패널")
     .setDescription("소영 봇의 현재 작동 상태입니다.")
@@ -753,6 +833,21 @@ function createAdminPanel() {
         value: `${rules.length}개`,
         inline: true,
       },
+      {
+        name: "현재 채널 스레드 수",
+        value: `${totalThreadCount}개`,
+        inline: true,
+      },
+      {
+        name: "소영이가 연 스레드 수",
+        value: `${botOpenedThreadCount}개`,
+        inline: true,
+      },
+      {
+        name: "6시간 이상 비활성 스레드 수",
+        value: `${staleThreadIds.length}개`,
+        inline: true,
+      },
     )
     .setTimestamp();
 
@@ -761,6 +856,11 @@ function createAdminPanel() {
       .setCustomId("admin:compose")
       .setLabel("메시지 작성")
       .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId("admin:close-stale-threads")
+      .setLabel("6시간 지난 스레드 닫기")
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(staleThreadIds.length === 0),
   );
 
   return {
@@ -1053,12 +1153,37 @@ async function handleAdminInteraction(interaction) {
   }
 
   if (interaction.isChatInputCommand()) {
-    await interaction.reply(createAdminPanel());
+    await interaction.reply(await createAdminPanel(interaction.channel));
     return;
   }
 
   if (interaction.customId === "admin:compose") {
     await interaction.showModal(createAdminModal());
+    return;
+  }
+
+  if (interaction.customId === "admin:close-stale-threads") {
+    await interaction.deferUpdate();
+
+    const { staleThreadIds } = await getThreadStats(interaction.channel);
+
+    if (staleThreadIds.length === 0) {
+      await interaction.followUp({
+        content: "6시간 이상 활동이 없는 스레드가 없습니다.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const { closed, failed } = await closeStaleThreads(staleThreadIds);
+
+    await interaction.followUp({
+      content: `${closed}개의 스레드를 닫았습니다.${failed ? ` (${failed}개 실패)` : ""}`,
+      flags: MessageFlags.Ephemeral,
+    });
+
+    // 패널을 새로고침해서 갱신된 스레드 통계를 반영한다.
+    await interaction.editReply(await createAdminPanel(interaction.channel));
     return;
   }
 }
@@ -1127,6 +1252,8 @@ client.on(Events.MessageCreate, async (message) => {
         console.error("처리완료 처리 중 오류:", error);
       } finally {
         activeBotReplyThreads.delete(message.channel.id);
+        threadLastActivityAt.delete(message.channel.id);
+        clearThreadIdleTimer(message.channel);
       }
     }
   }
@@ -1137,7 +1264,8 @@ client.on(Events.MessageCreate, async (message) => {
 
   if (message.channel.isThread()) {
     // scheduleThreadAutoClose가 내부적으로 기존 타이머를 정리(clearThreadIdleTimer)하고
-    // 새로 예약하므로, 여기서 수동으로 다시 지울 필요는 없다.
+    // 새로 예약하며 threadLastActivityAt도 함께 갱신하므로, 여기서 수동으로 다시
+    // 처리할 필요는 없다.
     scheduleThreadAutoClose(message.channel);
   }
 
