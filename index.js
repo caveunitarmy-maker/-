@@ -1331,7 +1331,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 client.on(Events.MessageCreate, async (message) => {
-  if (message.author.bot || !message.guild) {
+  // message.system: 스레드 생성 알림, 멤버 참여, 부스트, 핀 고정 알림 등
+  // Discord가 자동 생성하는 시스템 메시지는 스레드 생성/답장(reply)이 애초에 불가능하므로
+  // 인증 요청 분석 파이프라인에 들어가기 전에 여기서 먼저 걸러낸다.
+  // (이걸 걸러내지 않으면 시스템 메시지 내용에 "닉네임"/"경로" 등 키워드가 우연히 포함될 경우
+  //  인증 요청으로 오인되어 startThread()가 50001, message.reply()가 50035로 실패하게 된다.)
+  if (message.author.bot || !message.guild || message.system) {
     return;
   }
 
