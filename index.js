@@ -8,6 +8,7 @@ const {
   GatewayIntentBits,
   MessageFlags,
   ModalBuilder,
+  OverwriteType, // 추가: 채널 권한 오버라이트 타입 구분용
   PermissionsBitField, // 추가
   SlashCommandBuilder,
   StringSelectMenuBuilder,
@@ -838,6 +839,95 @@ async function getBotPermissionsInfo(guild) {
   }
 }
 
+// 추가: 관리자 패널에서 확인할 채널별 핵심 권한 목록.
+// 인증 채널에서 스레드 생성/메시지 전송이 막히는 문제를 진단하는 데 필요한 항목 위주로 구성.
+const CHANNEL_KEY_PERMISSIONS = [
+  "ViewChannel",
+  "SendMessages",
+  "SendMessagesInThreads",
+  "CreatePublicThreads",
+  "CreatePrivateThreads",
+  "ReadMessageHistory",
+  "EmbedLinks",
+  "AttachFiles",
+  "ManageThreads",
+  "ManageMessages",
+];
+
+// 추가: 특정 채널에서 봇이 실제로 갖는 "유효 권한"(서버 역할 + 카테고리 + 채널 오버라이트가
+// 모두 계산된 최종 결과)과, 그 채널에 걸린 오버라이트 중 봇과 관련된 것(봇이 가진 역할 /
+// 봇 개별 계정 / @everyone)만 추려서 보여준다.
+// 서버 전역 역할 권한이 아무리 높아도 채널 오버라이트가 거부(Deny)로 걸려 있으면 막히기
+// 때문에, 이 채널 단위 정보가 "메시지 보내기/스레드 생성 실패" 문제 진단에 핵심이다.
+async function getChannelPermissionInfo(channel) {
+  if (!channel || !channel.guild) {
+    return undefined;
+  }
+
+  try {
+    const botMember = channel.guild.members.me ?? (await channel.guild.members.fetchMe());
+    const effectivePermissions = channel.permissionsFor(botMember);
+
+    const keyPermissionsText = CHANNEL_KEY_PERMISSIONS
+      .map((permName) => {
+        const has = effectivePermissions?.has(PermissionsBitField.Flags[permName]);
+        const label = PERMISSION_LABELS_KO[permName] || permName;
+        return `${has ? "✅" : "❌"} ${label}`;
+      })
+      .join("\n");
+
+    const overwriteLines = [];
+    const overwrites = channel.permissionOverwrites?.cache;
+
+    if (overwrites) {
+      const botRoleIds = new Set(botMember.roles.cache.keys());
+
+      for (const overwrite of overwrites.values()) {
+        const isEveryone = overwrite.id === channel.guild.id;
+        const isBotRole = overwrite.type === OverwriteType.Role && botRoleIds.has(overwrite.id);
+        const isBotMember = overwrite.type === OverwriteType.Member && overwrite.id === botMember.id;
+
+        if (!isEveryone && !isBotRole && !isBotMember) {
+          continue; // 봇과 무관한 다른 역할/멤버 오버라이트는 표시하지 않음
+        }
+
+        const allowNames = overwrite.allow.toArray().map((name) => PERMISSION_LABELS_KO[name] || name);
+        const denyNames = overwrite.deny.toArray().map((name) => PERMISSION_LABELS_KO[name] || name);
+
+        if (allowNames.length === 0 && denyNames.length === 0) {
+          continue;
+        }
+
+        let label;
+        if (isEveryone) {
+          label = "@everyone";
+        } else if (isBotRole) {
+          const role = channel.guild.roles.cache.get(overwrite.id);
+          label = `역할: ${role?.name || overwrite.id}`;
+        } else {
+          label = "봇 개별 오버라이트";
+        }
+
+        const parts = [];
+        if (allowNames.length) parts.push(`✅ 허용: ${allowNames.join(", ")}`);
+        if (denyNames.length) parts.push(`❌ 거부: ${denyNames.join(", ")}`);
+
+        overwriteLines.push(`**${label}**\n${parts.join("\n")}`);
+      }
+    }
+
+    return {
+      keyPermissionsText: keyPermissionsText || "조회 불가",
+      overwriteText: overwriteLines.length
+        ? overwriteLines.join("\n\n")
+        : "관련 오버라이트 없음 (상위 권한을 그대로 상속받는 중)",
+    };
+  } catch (error) {
+    console.error("채널 권한 조회 중 오류:", error);
+    return undefined;
+  }
+}
+
 async function getBotThreadsInfo(channel) {
   if (!channel || channel.isThread() || typeof channel.threads?.fetchActive !== "function") {
     return undefined;
@@ -877,6 +967,12 @@ async function createAdminPanel(channel) {
     return undefined;
   });
 
+  // 추가: 현재 채널의 권한 상세 조회
+  const channelPermissionInfo = await getChannelPermissionInfo(channel).catch((error) => {
+    console.error("채널 권한 정보 조회 중 오류:", error);
+    return undefined;
+  });
+
   const embed = new EmbedBuilder()
     .setTitle("마스터 컨트롤 패널")
     .setDescription("소영 봇의 현재 작동 상태입니다.")
@@ -903,6 +999,22 @@ async function createAdminPanel(channel) {
         name: "봇 권한",
         value: permissionsInfo
           ? truncateForEmbed(permissionsInfo.permissionsText)
+          : "조회 불가",
+        inline: false,
+      },
+      // 추가된 필드: 현재 채널 기준 유효 권한
+      {
+        name: `이 채널에서의 유효 권한 (#${channel.name ?? channel.id})`,
+        value: channelPermissionInfo
+          ? truncateForEmbed(channelPermissionInfo.keyPermissionsText)
+          : "조회 불가",
+        inline: false,
+      },
+      // 추가된 필드: 이 채널의 봇 관련 오버라이트
+      {
+        name: "이 채널의 권한 오버라이트 (봇 관련)",
+        value: channelPermissionInfo
+          ? truncateForEmbed(channelPermissionInfo.overwriteText)
           : "조회 불가",
         inline: false,
       },
