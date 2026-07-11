@@ -8,6 +8,7 @@ const {
   GatewayIntentBits,
   MessageFlags,
   ModalBuilder,
+  PermissionsBitField, // 추가
   SlashCommandBuilder,
   StringSelectMenuBuilder,
   TextInputBuilder,
@@ -739,6 +740,104 @@ async function getThreadLastActivityTimestamp(thread) {
 // - 전체 스레드 수: 채널에 열려있는 활성 스레드
 // - 소영이가 연 스레드 수: 그 중 ownerId가 봇 자신인 스레드 (message.startThread로 생성됨)
 // - 무활동 스레드: 소영이가 연 스레드 중 마지막 활동이 6시간 이상 지난 것
+const PERMISSION_LABELS_KO = {
+  CreateInstantInvite: "초대 코드 생성",
+  KickMembers: "멤버 추방",
+  BanMembers: "멤버 차단",
+  Administrator: "관리자",
+  ManageChannels: "채널 관리",
+  ManageGuild: "서버 관리",
+  AddReactions: "리액션 추가",
+  ViewAuditLog: "감사 로그 보기",
+  PrioritySpeaker: "우선 발언권",
+  Stream: "화면 공유",
+  ViewChannel: "채널 보기",
+  SendMessages: "메시지 보내기",
+  SendTTSMessages: "TTS 메시지 보내기",
+  ManageMessages: "메시지 관리",
+  EmbedLinks: "링크 임베드",
+  AttachFiles: "파일 첨부",
+  ReadMessageHistory: "메시지 기록 보기",
+  MentionEveryone: "전체 멘션",
+  UseExternalEmojis: "외부 이모지 사용",
+  ViewGuildInsights: "서버 인사이트 보기",
+  Connect: "음성 채널 연결",
+  Speak: "음성 채널 발언",
+  MuteMembers: "멤버 음소거",
+  DeafenMembers: "멤버 헤드셋 음소거",
+  MoveMembers: "멤버 이동",
+  UseVAD: "음성 감지 사용",
+  ChangeNickname: "닉네임 변경",
+  ManageNicknames: "닉네임 관리",
+  ManageRoles: "역할 관리",
+  ManageWebhooks: "웹훅 관리",
+  ManageEmojisAndStickers: "이모지/스티커 관리",
+  ManageGuildExpressions: "서버 표현 관리",
+  UseApplicationCommands: "슬래시 명령어 사용",
+  RequestToSpeak: "발언 요청",
+  ManageEvents: "이벤트 관리",
+  ManageThreads: "스레드 관리",
+  CreatePublicThreads: "공개 스레드 생성",
+  CreatePrivateThreads: "비공개 스레드 생성",
+  UseExternalStickers: "외부 스티커 사용",
+  SendMessagesInThreads: "스레드에서 메시지 보내기",
+  UseEmbeddedActivities: "액티비티 사용",
+  ModerateMembers: "멤버 타임아웃",
+  ViewCreatorMonetizationAnalytics: "수익화 분석 보기",
+  UseSoundboard: "사운드보드 사용",
+  UseExternalSounds: "외부 사운드 사용",
+  SendVoiceMessages: "음성 메시지 보내기",
+};
+
+function truncateForEmbed(text, maxLength = 1024) {
+  if (!text) {
+    return "-";
+  }
+  return text.length > maxLength ? `${text.slice(0, maxLength - 3)}...` : text;
+}
+
+function formatPermissionsList(permissions) {
+  if (!permissions) {
+    return "조회 불가";
+  }
+
+  if (permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return "🛡️ 관리자 (모든 권한 포함)";
+  }
+
+  const permissionNames = permissions.toArray();
+  if (permissionNames.length === 0) {
+    return "권한 없음";
+  }
+
+  return permissionNames
+    .map((name) => PERMISSION_LABELS_KO[name] || name)
+    .join(", ");
+}
+
+// 봇 자신이 현재 서버에서 가진 역할 목록과 권한을 조회한다.
+// guild.members.me가 캐시에 없으면 fetchMe()로 직접 조회한다.
+async function getBotPermissionsInfo(guild) {
+  if (!guild) {
+    return undefined;
+  }
+
+  try {
+    const botMember = guild.members.me ?? (await guild.members.fetchMe());
+
+    return {
+      roleNames: botMember.roles.cache
+        .filter((role) => role.id !== guild.id) // @everyone 제외
+        .sort((a, b) => b.position - a.position)
+        .map((role) => role.name),
+      permissionsText: formatPermissionsList(botMember.permissions),
+    };
+  } catch (error) {
+    console.error("봇 권한 조회 중 오류:", error);
+    return undefined;
+  }
+}
+
 async function getBotThreadsInfo(channel) {
   if (!channel || channel.isThread() || typeof channel.threads?.fetchActive !== "function") {
     return undefined;
@@ -772,55 +871,40 @@ async function createAdminPanel(channel) {
     return undefined;
   });
 
+  // 추가: 봇 권한/역할 조회
+  const permissionsInfo = await getBotPermissionsInfo(channel.guild).catch((error) => {
+    console.error("봇 권한 정보 조회 중 오류:", error);
+    return undefined;
+  });
+
   const embed = new EmbedBuilder()
     .setTitle("마스터 컨트롤 패널")
     .setDescription("소영 봇의 현재 작동 상태입니다.")
     .setColor(0x2f80ed)
     .addFields(
+      { name: "패널 사용자", value: `<@${ADMIN_USER_ID}>`, inline: true },
+      { name: "작동 서버", value: config.allowedGuildId || "전체 서버", inline: true },
+      { name: "작동 채널", value: "명령어를 실행한 채널", inline: true },
+      { name: "무응답 안내", value: isIdleMessageEnabled() ? formatDuration(config.idleTimeoutMs) : "꺼짐", inline: true },
+      { name: "자동 답장 쿨다운", value: formatDuration(config.replyCooldownMs), inline: true },
+      { name: "등록 규칙", value: `${rules.length}개`, inline: true },
+      { name: "채널 내 전체 스레드 수", value: threadsInfo ? `${threadsInfo.totalThreadCount}개` : "조회 불가 (스레드 채널 등)", inline: true },
+      { name: "소영이가 연 스레드 수", value: threadsInfo ? `${threadsInfo.botThreadCount}개` : "-", inline: true },
+      { name: "6시간 이상 무활동 스레드", value: threadsInfo ? `${threadsInfo.staleThreads.length}개` : "-", inline: true },
+      // 추가된 필드
       {
-        name: "패널 사용자",
-        value: `<@${ADMIN_USER_ID}>`,
-        inline: true,
+        name: "봇이 가진 역할",
+        value: permissionsInfo?.roleNames?.length
+          ? truncateForEmbed(permissionsInfo.roleNames.join(", "))
+          : "역할 없음 / 조회 불가",
+        inline: false,
       },
       {
-        name: "작동 서버",
-        value: config.allowedGuildId || "전체 서버",
-        inline: true,
-      },
-      {
-        name: "작동 채널",
-        value: "명령어를 실행한 채널",
-        inline: true,
-      },
-      {
-        name: "무응답 안내",
-        value: isIdleMessageEnabled() ? formatDuration(config.idleTimeoutMs) : "꺼짐",
-        inline: true,
-      },
-      {
-        name: "자동 답장 쿨다운",
-        value: formatDuration(config.replyCooldownMs),
-        inline: true,
-      },
-      {
-        name: "등록 규칙",
-        value: `${rules.length}개`,
-        inline: true,
-      },
-      {
-        name: "채널 내 전체 스레드 수",
-        value: threadsInfo ? `${threadsInfo.totalThreadCount}개` : "조회 불가 (스레드 채널 등)",
-        inline: true,
-      },
-      {
-        name: "소영이가 연 스레드 수",
-        value: threadsInfo ? `${threadsInfo.botThreadCount}개` : "-",
-        inline: true,
-      },
-      {
-        name: "6시간 이상 무활동 스레드",
-        value: threadsInfo ? `${threadsInfo.staleThreads.length}개` : "-",
-        inline: true,
+        name: "봇 권한",
+        value: permissionsInfo
+          ? truncateForEmbed(permissionsInfo.permissionsText)
+          : "조회 불가",
+        inline: false,
       },
     )
     .setTimestamp();
