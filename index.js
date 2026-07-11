@@ -6,6 +6,9 @@ const {
   EmbedBuilder,
   Events,
   GatewayIntentBits,
+  GuildExplicitContentFilter, // 추가: 서버 보안 정보(유해 콘텐츠 필터) 표시용
+  GuildMFALevel, // 추가: 서버 보안 정보(관리자 2단계 인증 요구 여부) 표시용
+  GuildVerificationLevel, // 추가: 서버 보안 정보(인증 단계) 표시용
   MessageFlags,
   ModalBuilder,
   OverwriteType, // 추가: 채널 권한 오버라이트 타입 구분용
@@ -928,6 +931,68 @@ async function getChannelPermissionInfo(channel) {
   }
 }
 
+// 추가: 서버(길드) 단위 보안 설정을 사람이 읽기 쉬운 한국어로 변환한다.
+// 특정 서버에서만 봇의 메시지 전송/스레드 생성이 막히는 경우, 채널 권한이 아니라
+// 이 서버 전체의 보안 정책(인증 단계, 2FA 요구, 특수 서버 기능 등)이 원인일 수 있어
+// 진단 목적으로 함께 보여준다.
+const VERIFICATION_LEVEL_KO = {
+  [GuildVerificationLevel.None]: "없음",
+  [GuildVerificationLevel.Low]: "낮음 (이메일 인증 필요)",
+  [GuildVerificationLevel.Medium]: "보통 (5분 이상 가입된 계정만)",
+  [GuildVerificationLevel.High]: "높음 (10분 이상 멤버만)",
+  [GuildVerificationLevel.VeryHigh]: "매우 높음 (전화번호 인증 필요)",
+};
+
+const EXPLICIT_CONTENT_FILTER_KO = {
+  [GuildExplicitContentFilter.Disabled]: "사용 안 함",
+  [GuildExplicitContentFilter.MembersWithoutRoles]: "역할 없는 멤버만 검사",
+  [GuildExplicitContentFilter.AllMembers]: "모든 멤버 검사",
+};
+
+const MFA_LEVEL_KO = {
+  [GuildMFALevel.None]: "요구하지 않음",
+  [GuildMFALevel.Elevated]: "관리자 2단계 인증(2FA) 요구",
+};
+
+// 진단에 유용한 서버 기능(feature) 플래그만 선별해서 한국어 라벨로 매핑한다.
+const RELEVANT_GUILD_FEATURES_KO = {
+  COMMUNITY: "커뮤니티 서버",
+  MEMBER_VERIFICATION_GATE_ENABLED: "멤버 스크리닝(가입 규칙 동의) 사용",
+  PREVIEW_ENABLED: "서버 미리보기 사용",
+  WELCOME_SCREEN_ENABLED: "환영 화면 사용",
+  INVITES_DISABLED: "초대 링크 일시 중지됨",
+};
+
+async function getGuildSecurityInfo(guild) {
+  if (!guild) {
+    return undefined;
+  }
+
+  try {
+    let botMember = guild.members.me ?? (await guild.members.fetchMe());
+    const isBotTimedOut =
+      typeof botMember.isCommunicationDisabled === "function"
+        ? botMember.isCommunicationDisabled()
+        : Boolean(botMember.communicationDisabledUntilTimestamp && botMember.communicationDisabledUntilTimestamp > Date.now());
+
+    const relevantFeatures = guild.features
+      .filter((feature) => RELEVANT_GUILD_FEATURES_KO[feature])
+      .map((feature) => RELEVANT_GUILD_FEATURES_KO[feature]);
+
+    return {
+      verificationLevelText: VERIFICATION_LEVEL_KO[guild.verificationLevel] || "알 수 없음",
+      explicitContentFilterText: EXPLICIT_CONTENT_FILTER_KO[guild.explicitContentFilter] || "알 수 없음",
+      mfaLevelText: MFA_LEVEL_KO[guild.mfaLevel] || "알 수 없음",
+      isBotTimedOut,
+      botTimeoutUntil: botMember.communicationDisabledUntilTimestamp,
+      relevantFeaturesText: relevantFeatures.length ? relevantFeatures.join(", ") : "해당 없음",
+    };
+  } catch (error) {
+    console.error("서버 보안 정보 조회 중 오류:", error);
+    return undefined;
+  }
+}
+
 async function getBotThreadsInfo(channel) {
   if (!channel || channel.isThread() || typeof channel.threads?.fetchActive !== "function") {
     return undefined;
@@ -970,6 +1035,12 @@ async function createAdminPanel(channel) {
   // 추가: 현재 채널의 권한 상세 조회
   const channelPermissionInfo = await getChannelPermissionInfo(channel).catch((error) => {
     console.error("채널 권한 정보 조회 중 오류:", error);
+    return undefined;
+  });
+
+  // 추가: 서버 단위 보안 설정 조회
+  const guildSecurityInfo = await getGuildSecurityInfo(channel.guild).catch((error) => {
+    console.error("서버 보안 정보 조회 중 오류:", error);
     return undefined;
   });
 
@@ -1016,6 +1087,36 @@ async function createAdminPanel(channel) {
         value: channelPermissionInfo
           ? truncateForEmbed(channelPermissionInfo.overwriteText)
           : "조회 불가",
+        inline: false,
+      },
+      // 추가된 필드: 서버 보안 설정
+      {
+        name: "서버 인증 단계",
+        value: guildSecurityInfo ? guildSecurityInfo.verificationLevelText : "조회 불가",
+        inline: true,
+      },
+      {
+        name: "유해 콘텐츠 필터",
+        value: guildSecurityInfo ? guildSecurityInfo.explicitContentFilterText : "조회 불가",
+        inline: true,
+      },
+      {
+        name: "관리자 2단계 인증 요구",
+        value: guildSecurityInfo ? guildSecurityInfo.mfaLevelText : "조회 불가",
+        inline: true,
+      },
+      {
+        name: "봇 타임아웃 여부",
+        value: guildSecurityInfo
+          ? guildSecurityInfo.isBotTimedOut
+            ? `🔇 타임아웃 중 (해제: <t:${Math.floor((guildSecurityInfo.botTimeoutUntil ?? Date.now()) / 1000)}:R>)`
+            : "정상"
+          : "조회 불가",
+        inline: true,
+      },
+      {
+        name: "관련 서버 기능",
+        value: guildSecurityInfo ? truncateForEmbed(guildSecurityInfo.relevantFeaturesText) : "조회 불가",
         inline: false,
       },
     )
