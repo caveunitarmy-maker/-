@@ -1,4 +1,4 @@
-/*const {
+const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -1291,11 +1291,11 @@ const DIRECTOR_ROLE_IDS = new Set([DIRECTOR_ROLE_ID, "1520765889337753791"]);
 function isDirectorMember(member) {
   return [...DIRECTOR_ROLE_IDS].some((roleId) => member?.roles?.cache?.has(roleId));
 } */
-/*
+
 function stripLeadingEmoji(text) {
   return text.replace(/^[\s\u200B]*(?:(?:<a?:[\w\d_]+:\d+>)|[\p{Emoji_Presentation}\p{Extended_Pictographic}]|[:;][\-~]?[()DPpOo])+[\s\u200B]*/u, "");
-//}
-/*
+}
+
 function formatReplyWithValidity(baseReply, validityText, isValid) {
   const cleanedReply = stripLeadingEmoji(baseReply).trim();
   if (!validityText) {
